@@ -1,6 +1,6 @@
 ---
 title: "Analyzing CEO Compensation: Correlations & Predictive Modeling"
-author: "Anushna Gunda, Inaya Rizvi, Harsh Malik, Sai Bathina"
+author: "Anushna Gunda, Inaya Rizvi, Harsh Malik, Sai Bathina blah blah"
 date: "`r Sys.Date()`"
 output:
   word_document:
