@@ -1,0 +1,104 @@
+---
+title: "Analyzing CEO Compensation: Correlations & Predictive Modeling"
+author: "Anushna Gunda, Inaya Rizvi, Harsh Malik, Sai Bathina"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '3'
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+    number_sections: yes
+    theme: united
+    code_folding: none
+---
+
+
+Below I have created first-level headings for the project. You can add your own second-level (or third-level) headings by adding ## or ### before the sub-heading. I also added a code chunk under the #Results section just to show you how to get started. Once you are ready to knit your markdown file into a Word doc, delete this paragraph.
+
+# Introduction
+CEO compensation is a key metric in corporate governance and financial analysis. Our goal is to analyze what factors are most correlated with CEO pay and whether we can predict CEO compensation based on financial and market indicators.
+
+# Research Questions
+- What company financial and market factors influence CEO compensation?
+- Can we create a regression model to predict CEO total compensation?
+
+# Data and Methods
+
+**Source:** Pitchbook 
+
+## Overview of Dataset
+Using pitchbook, we custom-formatted a dataset that includes **CEO total compensation** as the dependent variable and the following independent variables:
+
+- **Company Financials:** Total Revenue, Revenue per Employee, EBITDA Margin, etc.
+
+- **Profitability Metrics:** ROIC, Net Profit Margin, Revenue Growth.
+
+- **Debt & Leverage:** Net Debt, Debt to Capital, Total Assets.
+
+- **Market Indicators:** Price % Change YTD, Beta (5-year), EV, EV/EBITDA.
+
+- **Categorical Factors:** HQ State/Province, Primary Industry Group (for identification and clustering)
+
+## Data Import & Preprocessing
+```{r}
+
+```
+
+## Exploratory Analysis
+
+### Summary Statistics
+```{r}
+
+```
+
+### Distributions of key variables 
+-- maybe histogram of CEO compensation distribution
+```{r}
+
+```
+
+### Correlation matrix to check relationships between dependent variables
+```{r}
+
+```
+-- interpret correlations, are higher revenues associated with higher CEO pay? or debt levels, etc. 
+
+### Visualizations 
+some ideas maybe:
+-- box plots of CEO comp by industry (also maybe run ANOVA test in conjunction to see if CEO comp differs significantly between industries)
+-- scatter plots of CEO comp vs. total rev, ROIC, net income growth
+-- test CEO compensation differences based on debt-levels 
+      -- split companies into high and low debt using median as             divider
+      -- use a t-test (if normal dist.), Wilcoxon test (if skewed)             (look at overall histogram of CEO comp for this)
+
+## Regression Analysis
+
+### Multiple Linear Regression: CEO Compensation ~ Financial Metrics
+
+-- which variables are statistically significant?
+-- are there unexpected relationships?
+-- check for multicollinearity
+-- use R-squared and residual plots to assess model performance
+```{r}
+
+```
+-- consider running a Shapiro-Wilk and Breusch-Pagan Test to check assumptions in model (ask inaya or chatGPT if you have questions)
+
+
+### Network Analysis - Clustering
+-- are there industry-based clusters where CEO pay is higher?
+-- compare debt and profitability profiles; do certain industries have similar debt structures?
+-- find anomalies; see if some CEOs have significantly more/less than expected within their cluster
+
+
+# Results
+Describe results in this section
+
+You can add text above and below code chunks
+
+# Discussion
+
+
