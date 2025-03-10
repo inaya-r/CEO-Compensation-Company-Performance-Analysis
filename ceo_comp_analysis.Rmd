@@ -15,7 +15,6 @@ output:
     code_folding: none
 ---
 
-
 Below I have created first-level headings for the project. You can add your own second-level (or third-level) headings by adding ## or ### before the sub-heading. I also added a code chunk under the #Results section just to show you how to get started. Once you are ready to knit your markdown file into a Word doc, delete this paragraph.
 
 # Introduction
@@ -60,7 +59,7 @@ library(dplyr)
 
 # Loading the Dataset
 raw_data <- read.csv("ceo_comp_data.csv", na.strings = c("", "NA"))
-
+raw_data <- raw_data %>% select (-X, -X.1)
 
 # Fixing Column Names
 ceo_data <- raw_data %>%
@@ -92,9 +91,9 @@ print(ceo_data)  # Quick data preview
 
 numeric_cols <- c("roic", "net_profit_margin", "ebitda_margin", "revenue_growth", 
                    "net_debt", "price_change_ytd", "ev", "revenue_per_employee",
-                  "debt_to_capital")
+                  "debt_to_capital", "ceo_total_comp_mils")
 
-# Converting Character Columns to Numeric (Fix Negative Parentheses Format)
+# Defining function to properly format negative numeric values 
 convert_negatives_column <- function(column) {
   column <- as.character(column)  # Convert to character
   
@@ -126,29 +125,39 @@ for (col in numeric_cols) {
   ceo_data[[col]] <- convert_negatives_column(ceo_data[[col]])
 }
 
-#  Check the Final Cleaned Data
-summary(ceo_data)
-str(ceo_data)
 
 #  Create a Copy for Imputation
 imputed_data <- ceo_data
 
-#  Impute Missing Values (Numeric: Median Imputation)
+#  Defining function to impute numeric columns with median
 impute_median <- function(column) {
   column[is.na(column)] <- median(column, na.rm = TRUE)
   return(column)
 }
 
+# Imputing numeric columns
 imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], impute_median)
 
-# Impute Categorical Variables (Mode Imputation)
+
+# Defining function to impute categorical columns with mode
 mode_impute <- function(column) {
   column[is.na(column)] <- names(sort(table(column), decreasing = TRUE))[1]
   return(column)
 }
 
+# Imputing categorical columns 
 categorical_cols <- c("primary_industry_group", "hq")  
 imputed_data[categorical_cols] <- lapply(imputed_data[categorical_cols], mode_impute)
+
+
+# Ensuring that all numeric columns are actually numeric type for both 
+ceo_data[numeric_cols] <- lapply(ceo_data[numeric_cols], function(x) as.numeric(as.character(x)))
+imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], function(x) as.numeric(as.character(x)))
+
+
+# Check the Cleaned Data
+summary(ceo_data)
+str(ceo_data)
 
 # Check the Imputed Dataset
 summary(imputed_data)
@@ -195,7 +204,7 @@ some ideas maybe:
 -- are there unexpected relationships?
 -- check for multicollinearity
 -- use R-squared and residual plots to assess model performance
-```{r}
+```{r, message=FALSE, warning=FALSE}
 
 ```
 -- consider running a Shapiro-Wilk and Breusch-Pagan Test to check assumptions in model (ask inaya or chatGPT if you have questions)
