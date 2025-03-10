@@ -14,7 +14,7 @@ output:
     theme: united
     code_folding: none
 ---
-
+# check check
 
 Below I have created first-level headings for the project. You can add your own second-level (or third-level) headings by adding ## or ### before the sub-heading. I also added a code chunk under the #Results section just to show you how to get started. Once you are ready to knit your markdown file into a Word doc, delete this paragraph.
 
@@ -151,7 +151,7 @@ categorical_cols <- c("primary_industry_group", "hq")
 imputed_data[categorical_cols] <- lapply(imputed_data[categorical_cols], mode_impute)
 
 
-#Ensuring that all numeric columns are actually numeric type for both 
+# Ensuring that all numeric columns are actually numeric type for both 
 ceo_data[numeric_cols] <- lapply(ceo_data[numeric_cols], function(x) as.numeric(as.character(x)))
 imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], function(x) as.numeric(as.character(x)))
 
