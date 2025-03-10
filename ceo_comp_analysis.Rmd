@@ -91,7 +91,8 @@ summary(ceo_data)  # Summary statistics
 print(ceo_data)  # Quick data preview
 
 numeric_cols <- c("roic", "net_profit_margin", "ebitda_margin", "revenue_growth", 
-                   "net_debt", "price_change_ytd", "ev")
+                   "net_debt", "price_change_ytd", "ev", "revenue_per_employee",
+                  "debt_to_capital")
 
 # Converting Character Columns to Numeric (Fix Negative Parentheses Format)
 convert_negatives_column <- function(column) {
