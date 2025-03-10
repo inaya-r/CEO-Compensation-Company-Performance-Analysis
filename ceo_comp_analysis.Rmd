@@ -43,6 +43,14 @@ Using pitchbook, we custom-formatted a dataset that includes **CEO total compens
 - **Categorical Factors:** HQ State/Province, Primary Industry Group (for identification and clustering)
 
 ## Data Import & Preprocessing
+Includes formatting column names and negative values (ceo_data), and handling null values by replacing null with medians (quantitative) or mode (qualitative) (imputed_data)
+
+AFTER RUNNING THIS CODE CHUNK:
+there are 2 datasets you can use:
+
+ceo_data = clean but with NA values for missing data
+imputed_data = clean with NA values replaced with median or mode (depending on data type) 
+
 ```{r, message=FALSE, warning=FALSE}
 
 # Loading Required Libraries
@@ -55,7 +63,7 @@ raw_data <- read.csv("ceo_comp_data.csv", na.strings = c("", "NA"))
 
 
 # Fixing Column Names
-raw_data <- raw_data %>%
+ceo_data <- raw_data %>%
   rename(
     total_revenue = "Total.Revenue..FY.",
     revenue_per_employee= "Revenue.per.Employee..FY.", 
@@ -75,12 +83,12 @@ raw_data <- raw_data %>%
   )
 
 # Viewing the new column names
-colnames(raw_data)
+colnames(ceo_data)
 
 # Viewing Basic Info
-str(raw_data)   # Check structure
-summary(raw_data)  # Summary statistics
-print(raw_data)  # Quick data preview
+str(ceo_data)   # Check structure
+summary(ceo_data)  # Summary statistics
+print(ceo_data)  # Quick data preview
 
 numeric_cols <- c("roic", "net_profit_margin", "ebitda_margin", "revenue_growth", 
                    "net_debt", "price_change_ytd", "ev")
@@ -114,15 +122,15 @@ convert_negatives_column <- function(column) {
 
 # Apply fix to all numeric columns
 for (col in numeric_cols) {
-  raw_data[[col]] <- convert_negatives_column(raw_data[[col]])
+  ceo_data[[col]] <- convert_negatives_column(ceo_data[[col]])
 }
 
 #  Check the Final Cleaned Data
-summary(raw_data)
-str(raw_data)
+summary(ceo_data)
+str(ceo_data)
 
 #  Create a Copy for Imputation
-imputed_data <- raw_data
+imputed_data <- ceo_data
 
 #  Impute Missing Values (Numeric: Median Imputation)
 impute_median <- function(column) {
@@ -138,16 +146,16 @@ mode_impute <- function(column) {
   return(column)
 }
 
-categorical_cols <- c("Primary_Industry_Group", "HQ_State")  # Adjust as needed
+categorical_cols <- c("primary_industry_group", "hq")  
 imputed_data[categorical_cols] <- lapply(imputed_data[categorical_cols], mode_impute)
 
 # Check the Imputed Dataset
 summary(imputed_data)
 glimpse(imputed_data)
 
-#  Save Cleaned Datasets (Optional)
-write.csv(raw_data, "ceo_comp_data_raw.csv", row.names = FALSE)
-write.csv(imputed_data, "ceo_comp_data_imputed.csv", row.names = FALSE)
+#  Optional - Save Cleaned Datasets
+# write.csv(ceo_data, "ceo_comp_data_raw.csv", row.names = FALSE)
+# write.csv(imputed_data, "ceo_comp_data_imputed.csv", row.names = FALSE)
 
 ```
 
