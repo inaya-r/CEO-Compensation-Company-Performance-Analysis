@@ -16,7 +16,7 @@ output:
 ---
 
 
-Below I have created first-level headings for the project. You can add your own second-level (or third-level) headings by adding ## or ### before the sub-heading. I also added a code chunk under the #Results section just to show you how to get started. Once you are ready to knit your markdown file into a Word doc, delete this paragraph.
+Below I have created first-level headings for the project. You can add your own second-level (or third-level) headings by adding ## or ### before the sub-heading. I also added a code chunk under the #Results section just to show you how to get started. Once you are ready to knit your markdown file into a Word doc, delete this paragraphklklkklkl. klklkl klk lklk 
 
 # Introduction
 CEO compensation is a key metric in corporate governance and financial analysis. Our goal is to analyze what factors are most correlated with CEO pay and whether we can predict CEO compensation based on financial and market indicators.
