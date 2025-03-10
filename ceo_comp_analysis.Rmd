@@ -43,7 +43,111 @@ Using pitchbook, we custom-formatted a dataset that includes **CEO total compens
 - **Categorical Factors:** HQ State/Province, Primary Industry Group (for identification and clustering)
 
 ## Data Import & Preprocessing
-```{r}
+```{r, message=FALSE, warning=FALSE}
+
+# Loading Required Libraries
+library(tidyverse)   # Data manipulation
+library(mice)        # Missing data imputation
+library(dplyr)
+
+# Loading the Dataset
+raw_data <- read.csv("ceo_comp_data.csv", na.strings = c("", "NA"))
+
+
+# Fixing Column Names
+raw_data <- raw_data %>%
+  rename(
+    total_revenue = "Total.Revenue..FY.",
+    revenue_per_employee= "Revenue.per.Employee..FY.", 
+    roic = "ROIC..Return.on.Invested.Capital...FY.",
+    net_profit_margin = "Net.Profit.Margin..FY.",
+    ebitda_margin = "EBITDA.Margin..FY.",
+    revenue_growth = "Revenue...Growth..FY.",
+    net_debt = "Net.Debt..FY.",
+    debt_to_capital = "Debt.to.Capital..FY.",
+    total_assets = "Total.Assets..FY.",
+    price_change_ytd = "Price...Change.YTD",
+    ev = "EV..FY.",
+    hq = "HQ.State.Province",
+    primary_industry_group = "Primary.Industry.Group",
+    ceo = "CEO",
+    ceo_total_comp_mils = "CEO.Total.Compensation..in.millions."
+  )
+
+# Viewing the new column names
+colnames(raw_data)
+
+# Viewing Basic Info
+str(raw_data)   # Check structure
+summary(raw_data)  # Summary statistics
+print(raw_data)  # Quick data preview
+
+numeric_cols <- c("roic", "net_profit_margin", "ebitda_margin", "revenue_growth", 
+                   "net_debt", "price_change_ytd", "ev")
+
+# Converting Character Columns to Numeric (Fix Negative Parentheses Format)
+convert_negatives_column <- function(column) {
+  column <- as.character(column)  # Convert to character
+  
+  for (i in seq_along(column)) {  
+    if (!is.na(column[i]) && column[i] != "") {  # Skip NA or empty values
+      column[i] <- trimws(column[i])  # Remove any leading/trailing spaces
+      
+      if (grepl("^\\(.*\\)$", column[i])) {  # Check if value has parentheses
+        column[i] <- gsub("[(),]", "", column[i])  # Remove parentheses & commas
+        column[i] <- as.numeric(column[i]) * -1  # Convert to negative
+      } else {
+        column[i] <- gsub(",", "", column[i])  # Remove commas from numbers
+        column[i] <- as.numeric(column[i])  # Convert normally
+      }
+      
+      # If conversion fails, set it to NA explicitly (to catch errors)
+      if (is.na(column[i])) {
+        column[i] <- NA
+      }
+    }
+  }
+  
+  return(as.numeric(column))  # Ensure the final output is numeric
+}
+
+
+# Apply fix to all numeric columns
+for (col in numeric_cols) {
+  raw_data[[col]] <- convert_negatives_column(raw_data[[col]])
+}
+
+# 📌 Check the Final Cleaned Data
+summary(raw_data)
+str(raw_data)
+
+# 📌 Create a Copy for Imputation
+imputed_data <- raw_data
+
+# 📌 Impute Missing Values (Numeric: Median Imputation)
+impute_median <- function(column) {
+  column[is.na(column)] <- median(column, na.rm = TRUE)
+  return(column)
+}
+
+imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], impute_median)
+
+# 📌 Impute Categorical Variables (Mode Imputation)
+mode_impute <- function(column) {
+  column[is.na(column)] <- names(sort(table(column), decreasing = TRUE))[1]
+  return(column)
+}
+
+categorical_cols <- c("Primary_Industry_Group", "HQ_State")  # Adjust as needed
+imputed_data[categorical_cols] <- lapply(imputed_data[categorical_cols], mode_impute)
+
+# 📌 Check the Imputed Dataset
+summary(imputed_data)
+glimpse(imputed_data)
+
+# 📌 Save Cleaned Datasets (Optional)
+write.csv(raw_data, "ceo_comp_data_raw.csv", row.names = FALSE)
+write.csv(imputed_data, "ceo_comp_data_imputed.csv", row.names = FALSE)
 
 ```
 
