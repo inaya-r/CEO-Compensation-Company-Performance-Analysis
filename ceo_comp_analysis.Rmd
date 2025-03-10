@@ -16,7 +16,7 @@ output:
 ---
 
 
-Below I have created first-level headings for the project. You can add your own second-level (or third-level) headings by adding ## or ### before the sub-heading. I also added a code chunk under the #Results section just to show you how to get started. Once you are ready to knit your markdown file into a Word doc, delete this paragraph.
+Below I have created first-level headings for the project. You can add your own second-level (or third-level) headings by adding ## or ### before the sub-heading. I also added a code chunk under the #Results section just to show you how to get started. Once you are ready to knit your markdown file into a Word doc, delete this paragraph. kl
 
 # Introduction
 CEO compensation is a key metric in corporate governance and financial analysis. Our goal is to analyze what factors are most correlated with CEO pay and whether we can predict CEO compensation based on financial and market indicators.
@@ -195,17 +195,112 @@ some ideas maybe:
 -- are there unexpected relationships?
 -- check for multicollinearity
 -- use R-squared and residual plots to assess model performance
-```{r}
 
-```
+
+
 -- consider running a Shapiro-Wilk and Breusch-Pagan Test to check assumptions in model (ask inaya or chatGPT if you have questions)
 
 
 ### Network Analysis - Clustering
--- are there industry-based clusters where CEO pay is higher?
--- compare debt and profitability profiles; do certain industries have similar debt structures?
--- find anomalies; see if some CEOs have significantly more/less than expected within their cluster
 
+-- Are there industry-based clusters where CEO pay is higher?
+
+```{r, warning=FALSE, message=FALSE}
+# Load necessary libraries
+library(igraph)    # For network analysis
+library(ggraph)    # For network visualization
+library(tidyverse) # For data manipulation
+library(scales)    # For rescaling values
+library(viridis)   # For better color gradients
+
+# First prepare the clustering data from ceo_data
+clustering_data <- ceo_data %>%
+  # Replace NA in HQ.State.Province with "Outside US"
+  mutate(HQ.State.Province = ifelse(is.na(HQ.State.Province) | HQ.State.Province == "", 
+                                   "Outside US", HQ.State.Province),
+         # Convert Ireland and Netherlands to the combined category
+         HQ.State.Province = ifelse(HQ.State.Province %in% c("Ireland", "Netherlands"), 
+                                   "Ireland/Netherlands", HQ.State.Province))
+
+# Check for duplicates in company_id
+duplicates <- clustering_data %>% 
+  count(company_id) %>% 
+  filter(n > 1)
+
+# Handle duplicates if they exist
+if(nrow(duplicates) > 0) {
+  clustering_data <- clustering_data %>%
+    group_by(company_id) %>%
+    mutate(id_suffix = if(n() > 1) paste0("_", row_number()) else "") %>%
+    ungroup() %>%
+    mutate(company_id = paste0(company_id, id_suffix)) %>%
+    select(-id_suffix)
+}
+
+# Create the vertex data frame with compensation data
+vertex_data <- clustering_data %>%
+  select(company_id, hq = HQ.State.Province, compensation = CEO.Total.Compensation..in.millions.) %>%
+  mutate(compensation = as.numeric(as.character(compensation))) %>% # Convert to numeric
+  filter(!is.na(compensation))  # Remove records with missing compensation
+
+# Create edge list based on HQ location
+edge_list <- vertex_data %>%
+  select(company_id, hq) %>%
+  group_by(hq) %>%
+  filter(n() > 1) %>%  # Only connect companies in same location 
+  group_map(~{
+    ids <- .x$company_id
+    if(length(ids) >= 2) {
+      edges <- t(combn(ids, 2))
+      data.frame(from = edges[,1], to = edges[,2])
+    }
+  }) %>%
+  bind_rows()
+
+# Verify that all edge vertices exist in the vertex data
+edge_vertices <- unique(c(edge_list$from, edge_list$to))
+missing_vertices <- edge_vertices[!edge_vertices %in% vertex_data$company_id]
+
+if(length(missing_vertices) > 0) {
+  print(paste("Missing vertices:", paste(missing_vertices, collapse=", ")))
+  # Remove problem edges
+  edge_list <- edge_list %>%
+    filter(!(from %in% missing_vertices | to %in% missing_vertices))
+}
+
+# Create the igraph object
+g <- graph_from_data_frame(edge_list, directed = FALSE, vertices = vertex_data)
+
+# Calculate node size based on CEO compensation (normalized for better visualization)
+compensation_numeric <- as.numeric(V(g)$compensation)
+V(g)$node_size <- scales::rescale(compensation_numeric, to = c(3, 15))
+
+# Calculate compensation categories for coloring
+compensation_breaks <- c(0, 5, 10, 20, 50, 100, max(compensation_numeric, na.rm = TRUE))
+V(g)$comp_category <- cut(compensation_numeric, 
+                         breaks = compensation_breaks,
+                         labels = c("<$5M", "$5-10M", "$10-20M", "$20-50M", "$50-100M", ">$100M"),
+                         include.lowest = TRUE)
+
+# Plot the network graph showing CEO compensation clustering by HQ location
+ggraph(g, layout = 'fr') +
+  geom_edge_link(alpha = 0.3, width = 0.5) +
+  geom_node_point(aes(size = node_size, color = comp_category)) +
+  geom_node_text(aes(label = hq), repel = TRUE, size = 3, alpha = 0.8) +
+  scale_color_viridis_d(option = "plasma", end = 0.9) +
+  scale_size_identity() +
+  theme_void() +
+  labs(title = "CEO Compensation Clustering by Headquarters Location",
+       subtitle = "Node size represents compensation amount, color represents compensation range",
+       caption = "Companies connected by same HQ location",
+       color = "CEO Compensation") +
+  guides(size = "none") +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12),
+    legend.position = "right"
+  )
+```
 
 # Results
 Describe results in this section
