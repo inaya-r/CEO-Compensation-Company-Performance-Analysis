@@ -60,7 +60,7 @@ library(dplyr)
 
 # Loading the Dataset
 raw_data <- read.csv("ceo_comp_data.csv", na.strings = c("", "NA"))
-
+raw_data <- raw_data %>% select (-X, -X.1)
 
 # Fixing Column Names
 ceo_data <- raw_data %>%
@@ -79,7 +79,9 @@ ceo_data <- raw_data %>%
     hq = "HQ.State.Province",
     primary_industry_group = "Primary.Industry.Group",
     ceo = "CEO",
-    ceo_total_comp_mils = "CEO.Total.Compensation..in.millions."
+    ceo_total_comp_mils = "CEO.Total.Compensation..in.millions.",
+    employees = "Employees",
+    companies = "Companies"
   )
 
 # Viewing the new column names
@@ -90,11 +92,38 @@ str(ceo_data)   # Check structure
 summary(ceo_data)  # Summary statistics
 print(ceo_data)  # Quick data preview
 
+# Function to clean and convert numeric columns with commas & parentheses
+convert_numeric_column <- function(column) {
+  column <- as.character(column)  # Ensure it's a character string first
+  
+  # Remove any leading/trailing spaces
+  column <- trimws(column)
+  
+  # Convert negative values (e.g., "(2,000)" → "-2000")
+  column <- gsub("[(),]", "", column)  # Remove parentheses and commas
+  column <- ifelse(grepl("^\\(.*\\)$", column), paste0("-", column), column) 
+  
+  # Convert to numeric
+  column <- as.numeric(column)
+  
+  return(column)
+}
+
+# Apply conversion to `total_revenue` & `total_assets`
+ceo_data$total_revenue <- convert_numeric_column(ceo_data$total_revenue)
+ceo_data$total_assets <- convert_numeric_column(ceo_data$total_assets)
+ceo_data$employees <- convert_numeric_column(ceo_data$employees)
+
+# Check if conversion worked
+str(ceo_data$total_revenue)
+str(ceo_data$total_assets)
+
+
 numeric_cols <- c("roic", "net_profit_margin", "ebitda_margin", "revenue_growth", 
                    "net_debt", "price_change_ytd", "ev", "revenue_per_employee",
-                  "debt_to_capital")
+                  "debt_to_capital", "ceo_total_comp_mils")
 
-# Converting Character Columns to Numeric (Fix Negative Parentheses Format)
+# Defining function to properly format negative numeric values 
 convert_negatives_column <- function(column) {
   column <- as.character(column)  # Convert to character
   
@@ -126,29 +155,39 @@ for (col in numeric_cols) {
   ceo_data[[col]] <- convert_negatives_column(ceo_data[[col]])
 }
 
-#  Check the Final Cleaned Data
-summary(ceo_data)
-str(ceo_data)
 
 #  Create a Copy for Imputation
 imputed_data <- ceo_data
 
-#  Impute Missing Values (Numeric: Median Imputation)
+#  Defining function to impute numeric columns with median
 impute_median <- function(column) {
   column[is.na(column)] <- median(column, na.rm = TRUE)
   return(column)
 }
 
+# Imputing numeric columns
 imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], impute_median)
 
-# Impute Categorical Variables (Mode Imputation)
+
+# Defining function to impute categorical columns with mode
 mode_impute <- function(column) {
   column[is.na(column)] <- names(sort(table(column), decreasing = TRUE))[1]
   return(column)
 }
 
+# Imputing categorical columns 
 categorical_cols <- c("primary_industry_group", "hq")  
 imputed_data[categorical_cols] <- lapply(imputed_data[categorical_cols], mode_impute)
+
+
+# Ensuring that all numeric columns are actually numeric type for both 
+ceo_data[numeric_cols] <- lapply(ceo_data[numeric_cols], function(x) as.numeric(as.character(x)))
+imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], function(x) as.numeric(as.character(x)))
+
+
+# Check the Cleaned Data
+summary(ceo_data)
+glimpse(ceo_data)
 
 # Check the Imputed Dataset
 summary(imputed_data)
@@ -159,6 +198,7 @@ glimpse(imputed_data)
 # write.csv(imputed_data, "ceo_comp_data_imputed.csv", row.names = FALSE)
 
 ```
+
 
 ## Exploratory Analysis
 
@@ -186,8 +226,134 @@ some ideas maybe:
 -- test CEO compensation differences based on debt-levels 
       -- split companies into high and low debt using median as             divider
       -- use a t-test (if normal dist.), Wilcoxon test (if skewed)             (look at overall histogram of CEO comp for this)
+```{r, warning=FALSE, message=FALSE}
+# Load necessary libraries
+library(tidyverse)
+library(ggplot2)
+library(car)
+library(stats)
 
+# Using the imputed_data dataset from the provided information
+
+# 1. Box plots of CEO compensation by industry with ANOVA test
+# First, let's get the top industries by frequency to avoid too many categories
+top_industries <- imputed_data %>%
+  count(primary_industry_group, sort = TRUE) %>%
+  filter(n >= 10) %>% # filter for industries with at least 10 companies
+  pull(primary_industry_group)
+
+# Create a filtered dataset with only top industries
+industry_filtered <- imputed_data %>%
+  filter(primary_industry_group %in% top_industries)
+
+# Create boxplot of CEO compensation by industry
+ggplot(industry_filtered, aes(x = reorder(primary_industry_group, ceo_total_comp_mils, FUN = median), 
+                              y = ceo_total_comp_mils)) +
+  geom_boxplot(fill = "skyblue", alpha = 0.7) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "CEO Compensation by Industry",
+       x = "Industry Group",
+       y = "CEO Total Compensation (Millions $)")
+
+# Run ANOVA test to check if CEO compensation differs significantly between industries
+anova_result <- aov(ceo_total_comp_mils ~ primary_industry_group, data = industry_filtered)
+summary(anova_result)
+
+# 2. Scatter plots of CEO comp vs. financial metrics
+
+# CEO comp vs Total Revenue
+ggplot(imputed_data, aes(x = total_revenue, y = ceo_total_comp_mils)) +
+  geom_point(alpha = 0.6, color = "blue") +
+  geom_smooth(method = "lm", color = "red") +
+  scale_x_log10(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "CEO Compensation vs. Total Revenue",
+       x = "Total Revenue (log scale)",
+       y = "CEO Total Compensation (Millions $)")
+
+# Calculate correlation
+cor_rev_comp <- cor.test(log10(imputed_data$total_revenue + 1), imputed_data$ceo_total_comp_mils)
+print(cor_rev_comp)
+
+# CEO comp vs ROIC
+ggplot(imputed_data, aes(x = roic, y = ceo_total_comp_mils)) +
+  geom_point(alpha = 0.6, color = "green") +
+  geom_smooth(method = "lm", color = "red") +
+  theme_minimal() +
+  labs(title = "CEO Compensation vs. Return on Invested Capital",
+       x = "ROIC (%)",
+       y = "CEO Total Compensation (Millions $)") +
+  coord_cartesian(xlim = c(-100, 100)) # Limit x-axis to exclude extreme outliers
+
+# Calculate correlation (excluding extreme outliers)
+roic_filtered <- imputed_data %>% filter(roic > -100 & roic < 100)
+cor_roic_comp <- cor.test(roic_filtered$roic, roic_filtered$ceo_total_comp_mils)
+print(cor_roic_comp)
+
+# CEO comp vs Revenue Growth
+ggplot(imputed_data, aes(x = revenue_growth, y = ceo_total_comp_mils)) +
+  geom_point(alpha = 0.6, color = "purple") +
+  geom_smooth(method = "lm", color = "red") +
+  theme_minimal() +
+  labs(title = "CEO Compensation vs. Revenue Growth",
+       x = "Revenue Growth (%)",
+       y = "CEO Total Compensation (Millions $)") +
+  coord_cartesian(xlim = c(-50, 100)) # Limit x-axis to exclude extreme outliers
+
+# Calculate correlation (excluding extreme outliers)
+growth_filtered <- imputed_data %>% filter(revenue_growth > -50 & revenue_growth < 100)
+cor_growth_comp <- cor.test(growth_filtered$revenue_growth, growth_filtered$ceo_total_comp_mils)
+print(cor_growth_comp)
+
+# 3. Test CEO compensation differences based on debt-levels
+# First, check the histogram of CEO compensation to determine if normal or skewed
+ggplot(imputed_data, aes(x = ceo_total_comp_mils)) +
+  geom_histogram(bins = 30, fill = "orange", color = "black", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Distribution of CEO Compensation",
+       x = "CEO Total Compensation (Millions $)",
+       y = "Frequency")
+
+# Split companies into high and low debt using median as divider
+debt_median <- median(imputed_data$debt_to_capital, na.rm = TRUE)
+imputed_data$debt_level <- ifelse(imputed_data$debt_to_capital > debt_median, "High Debt", "Low Debt")
+
+# Visualize CEO compensation by debt level
+ggplot(imputed_data, aes(x = debt_level, y = ceo_total_comp_mils)) +
+  geom_boxplot(fill = c("lightgreen", "coral"), alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "CEO Compensation by Debt Level",
+       x = "Debt Level",
+       y = "CEO Total Compensation (Millions $)")
+
+# Test for normality
+shapiro.test(imputed_data$ceo_total_comp_mils[1:5000]) # Limited to 5000 samples due to Shapiro-Wilk test limitations
+
+# Based on histogram and normality test, choose appropriate test
+# If skewed (likely), use Wilcoxon test
+wilcox_result <- wilcox.test(ceo_total_comp_mils ~ debt_level, data = imputed_data)
+print(wilcox_result)
+
+# If normal distribution (unlikely), use t-test
+t_test_result <- t.test(ceo_total_comp_mils ~ debt_level, data = imputed_data)
+print(t_test_result)
+
+# 4. Additional analysis: Company size (employees) vs CEO compensation
+ggplot(imputed_data, aes(x = employees, y = ceo_total_comp_mils)) +
+  geom_point(alpha = 0.6, color = "darkblue") +
+  geom_smooth(method = "lm", color = "red") +
+  scale_x_log10(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "CEO Compensation vs. Number of Employees",
+       x = "Number of Employees (log scale)",
+       y = "CEO Total Compensation (Millions $)")
+
+# Calculate correlation
+cor_emp_comp <- cor.test(log10(imputed_data$employees + 1), imputed_data$ceo_total_comp_mils)
+print(cor_emp_comp)
 ## Regression Analysis
+```
 
 ### Multiple Linear Regression: CEO Compensation ~ Financial Metrics
 
@@ -206,100 +372,130 @@ some ideas maybe:
 -- Are there industry-based clusters where CEO pay is higher?
 
 ```{r, warning=FALSE, message=FALSE}
-# Load necessary libraries
-library(igraph)    # For network analysis
-library(ggraph)    # For network visualization
-library(tidyverse) # For data manipulation
-library(scales)    # For rescaling values
-library(viridis)   # For better color gradients
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(stringr)
+library(ggrepel)
 
-# First prepare the clustering data from ceo_data
-clustering_data <- ceo_data %>%
-  # Replace NA in HQ.State.Province with "Outside US"
-  mutate(HQ.State.Province = ifelse(is.na(HQ.State.Province) | HQ.State.Province == "", 
-                                   "Outside US", HQ.State.Province),
-         # Convert Ireland and Netherlands to the combined category
-         HQ.State.Province = ifelse(HQ.State.Province %in% c("Ireland", "Netherlands"), 
-                                   "Ireland/Netherlands", HQ.State.Province))
-
-# Check for duplicates in company_id
-duplicates <- clustering_data %>% 
-  count(company_id) %>% 
-  filter(n > 1)
-
-# Handle duplicates if they exist
-if(nrow(duplicates) > 0) {
-  clustering_data <- clustering_data %>%
-    group_by(company_id) %>%
-    mutate(id_suffix = if(n() > 1) paste0("_", row_number()) else "") %>%
-    ungroup() %>%
-    mutate(company_id = paste0(company_id, id_suffix)) %>%
-    select(-id_suffix)
-}
-
-# Create the vertex data frame with compensation data
-vertex_data <- clustering_data %>%
-  select(company_id, hq = HQ.State.Province, compensation = CEO.Total.Compensation..in.millions.) %>%
-  mutate(compensation = as.numeric(as.character(compensation))) %>% # Convert to numeric
-  filter(!is.na(compensation))  # Remove records with missing compensation
-
-# Create edge list based on HQ location
-edge_list <- vertex_data %>%
-  select(company_id, hq) %>%
+# Create location summary statistics
+location_summary <- imputed_data %>%
+  filter(!is.na(hq)) %>%
   group_by(hq) %>%
-  filter(n() > 1) %>%  # Only connect companies in same location 
-  group_map(~{
-    ids <- .x$company_id
-    if(length(ids) >= 2) {
-      edges <- t(combn(ids, 2))
-      data.frame(from = edges[,1], to = edges[,2])
-    }
-  }) %>%
-  bind_rows()
+  summarize(
+    avg_ceo_comp = mean(ceo_total_comp_mils, na.rm = TRUE),
+    median_ceo_comp = median(ceo_total_comp_mils, na.rm = TRUE),
+    count = n(),
+    avg_ev = mean(ev/1e6, na.rm = TRUE),
+    avg_employees = mean(employees, na.rm = TRUE)
+  ) %>%
+  # Filter to include only locations with at least 5 companies
+  filter(count >= 5) %>%
+  arrange(desc(avg_ceo_comp))
 
-# Verify that all edge vertices exist in the vertex data
-edge_vertices <- unique(c(edge_list$from, edge_list$to))
-missing_vertices <- edge_vertices[!edge_vertices %in% vertex_data$company_id]
+# Print top locations by CEO compensation
+print(location_summary)
 
-if(length(missing_vertices) > 0) {
-  print(paste("Missing vertices:", paste(missing_vertices, collapse=", ")))
-  # Remove problem edges
-  edge_list <- edge_list %>%
-    filter(!(from %in% missing_vertices | to %in% missing_vertices))
-}
-
-# Create the igraph object
-g <- graph_from_data_frame(edge_list, directed = FALSE, vertices = vertex_data)
-
-# Calculate node size based on CEO compensation (normalized for better visualization)
-compensation_numeric <- as.numeric(V(g)$compensation)
-V(g)$node_size <- scales::rescale(compensation_numeric, to = c(3, 15))
-
-# Calculate compensation categories for coloring
-compensation_breaks <- c(0, 5, 10, 20, 50, 100, max(compensation_numeric, na.rm = TRUE))
-V(g)$comp_category <- cut(compensation_numeric, 
-                         breaks = compensation_breaks,
-                         labels = c("<$5M", "$5-10M", "$10-20M", "$20-50M", "$50-100M", ">$100M"),
-                         include.lowest = TRUE)
-
-# Plot the network graph showing CEO compensation clustering by HQ location
-ggraph(g, layout = 'fr') +
-  geom_edge_link(alpha = 0.3, width = 0.5) +
-  geom_node_point(aes(size = node_size, color = comp_category)) +
-  geom_node_text(aes(label = hq), repel = TRUE, size = 3, alpha = 0.8) +
-  scale_color_viridis_d(option = "plasma", end = 0.9) +
-  scale_size_identity() +
-  theme_void() +
-  labs(title = "CEO Compensation Clustering by Headquarters Location",
-       subtitle = "Node size represents compensation amount, color represents compensation range",
-       caption = "Companies connected by same HQ location",
-       color = "CEO Compensation") +
-  guides(size = "none") +
+# Create a bar chart showing average CEO compensation by location
+p_location_bar <- ggplot(location_summary, 
+                         aes(x = reorder(hq, avg_ceo_comp), 
+                             y = avg_ceo_comp, 
+                             fill = avg_ceo_comp)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("$%.1fM", avg_ceo_comp)), 
+            hjust = -0.1, size = 3) +
+  geom_text(aes(label = sprintf("n=%d", count)),
+            y = 1, hjust = 1.1, size = 3, color = "white") +
+  coord_flip() +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal() +
+  labs(
+    title = "Average CEO Compensation by Location",
+    subtitle = "For locations with at least 5 companies",
+    x = NULL,
+    y = "Average CEO Compensation ($ Millions)",
+    fill = "Avg CEO Comp ($M)"
+  ) +
   theme(
-    plot.title = element_text(face = "bold", size = 14),
-    plot.subtitle = element_text(size = 12),
-    legend.position = "right"
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(size = 9)
   )
+
+print(p_location_bar)
+
+# Create a scatter plot comparing CEO compensation vs. enterprise value by location
+p_location_scatter <- ggplot(imputed_data %>% 
+                              filter(hq %in% location_summary$hq), 
+                            aes(x = ev/1e6, 
+                                y = ceo_total_comp_mils,
+                                color = hq)) +
+  geom_point(alpha = 0.7, size = 3) +
+  scale_x_log10(labels = scales::comma_format()) +
+  scale_color_viridis_d() +
+  theme_minimal() +
+  labs(
+    title = "CEO Compensation vs. Enterprise Value by Location",
+    subtitle = "Log scale for EV, top locations by company count",
+    x = "Enterprise Value ($ Millions, log scale)",
+    y = "CEO Compensation ($ Millions)",
+    color = "Headquarters"
+  ) +
+  theme(legend.position = "right")
+
+print(p_location_scatter)
+
+# Create a location comparison visualization
+p_location_comparison <- ggplot(location_summary, 
+                             aes(x = avg_ev, 
+                                 y = avg_ceo_comp, 
+                                 size = count,
+                                 color = avg_ceo_comp)) +
+  geom_point(alpha = 0.8) +
+  geom_text_repel(aes(label = hq), 
+                 size = 3,
+                 box.padding = 0.5,
+                 point.padding = 0.5,
+                 force = 2) +
+  scale_x_log10(labels = scales::comma_format()) +
+  scale_size_continuous(range = c(3, 10)) +
+  scale_color_viridis_c(option = "plasma") +
+  theme_minimal() +
+  labs(
+    title = "CEO Compensation vs. Enterprise Value by Location",
+    subtitle = "Bubble size indicates number of companies in each location",
+    x = "Average Enterprise Value ($ Millions, log scale)",
+    y = "Average CEO Compensation ($ Millions)",
+    size = "Number of Companies",
+    color = "Avg CEO Comp ($M)"
+  )
+
+print(p_location_comparison)
+
+# Location boxplot to show distribution
+p_location_boxplot <- ggplot(imputed_data %>% 
+                              filter(hq %in% location_summary$hq), 
+                            aes(x = reorder(hq, ceo_total_comp_mils, FUN = median), 
+                                y = ceo_total_comp_mils,
+                                fill = median(ceo_total_comp_mils))) +
+  geom_boxplot() +
+  coord_flip() +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of CEO Compensation by Location",
+    subtitle = "For locations with at least 5 companies",
+    x = NULL,
+    y = "CEO Compensation ($ Millions)",
+    fill = "Median CEO Comp ($M)"
+  ) +
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(size = 9)
+  )
+
+print(p_location_boxplot)
 ```
 
 # Results
@@ -308,5 +504,4 @@ Describe results in this section
 You can add text above and below code chunks
 
 # Discussion
-
 
