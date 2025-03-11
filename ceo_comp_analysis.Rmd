@@ -78,7 +78,9 @@ ceo_data <- raw_data %>%
     hq = "HQ.State.Province",
     primary_industry_group = "Primary.Industry.Group",
     ceo = "CEO",
-    ceo_total_comp_mils = "CEO.Total.Compensation..in.millions."
+    ceo_total_comp_mils = "CEO.Total.Compensation..in.millions.",
+    employees = "Employees",
+    companies = "Companies"
   )
 
 # Viewing the new column names
@@ -88,6 +90,33 @@ colnames(ceo_data)
 str(ceo_data)   # Check structure
 summary(ceo_data)  # Summary statistics
 print(ceo_data)  # Quick data preview
+
+# Function to clean and convert numeric columns with commas & parentheses
+convert_numeric_column <- function(column) {
+  column <- as.character(column)  # Ensure it's a character string first
+  
+  # Remove any leading/trailing spaces
+  column <- trimws(column)
+  
+  # Convert negative values (e.g., "(2,000)" → "-2000")
+  column <- gsub("[(),]", "", column)  # Remove parentheses and commas
+  column <- ifelse(grepl("^\\(.*\\)$", column), paste0("-", column), column) 
+  
+  # Convert to numeric
+  column <- as.numeric(column)
+  
+  return(column)
+}
+
+# Apply conversion to `total_revenue` & `total_assets`
+ceo_data$total_revenue <- convert_numeric_column(ceo_data$total_revenue)
+ceo_data$total_assets <- convert_numeric_column(ceo_data$total_assets)
+ceo_data$employees <- convert_numeric_column(ceo_data$employees)
+
+# Check if conversion worked
+str(ceo_data$total_revenue)
+str(ceo_data$total_assets)
+
 
 numeric_cols <- c("roic", "net_profit_margin", "ebitda_margin", "revenue_growth", 
                    "net_debt", "price_change_ytd", "ev", "revenue_per_employee",
@@ -157,7 +186,7 @@ imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], function(x) as.
 
 # Check the Cleaned Data
 summary(ceo_data)
-str(ceo_data)
+glimpse(ceo_data)
 
 # Check the Imputed Dataset
 summary(imputed_data)
