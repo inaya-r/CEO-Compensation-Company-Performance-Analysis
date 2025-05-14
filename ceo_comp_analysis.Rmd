@@ -1,0 +1,563 @@
+---
+title: "Analyzing CEO Compensation: Correlations & Predictive Modeling"
+author: "Anushna Gunda, Inaya Rizvi, Harsh Malik, Sai Bathina"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '3'
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+    number_sections: yes
+    theme: united
+    code_folding: none
+---
+
+# Introduction
+
+CEO compensation has long been a central topic in corporate governance and financial research, given its implications for organizational performance, shareholder value, and economic inequality. Executive pay structures typically include a mix of salary, bonuses, stock options, and long-term incentives aimed at aligning the interests of CEOs with those of stakeholders. However, questions remain regarding the extent to which CEO compensation is justified by firm performance versus other structural or market-driven factors. Understanding these relationships is essential for investors, policymakers, and corporate boards to ensure transparency, fairness, and the optimal design of executive compensation policies.
+
+Prior studies have explored the dynamics of executive compensation across different industries. Anderson, Banker, and Ravindran (2000) examined the information technology sector and found that firm size and growth opportunities significantly impact CEO pay, while Banerjee (2022) highlighted discrepancies in software industry salaries across global markets. Bouteska, Sharif, and Zoghbi (2024) provided evidence that executive compensation correlates with both firm performance and risk-taking behavior, suggesting that CEOs with higher risk appetites tend to receive larger pay packages. Additionally, Elsayed and Elbardan (2018) investigated the impact of CEO compensation on earnings management, revealing that firms with high-powered incentive structures often engage in strategic earnings adjustments. These studies demonstrate that executive pay is influenced by a complex interplay of financial, governance, and market factors, but a comprehensive model predicting CEO compensation remains an open question.
+This study aims to build on these insights by analyzing a dataset of CEO compensation sourced from PitchBook. Specifically, we investigate two primary research questions: (1) What financial and market factors most strongly influence CEO compensation? and (2) Can we develop a predictive model to estimate CEO total compensation based on these indicators? Our analysis will employ statistical techniques, including correlation analysis, multiple linear regression, and clustering methods, to uncover key drivers of CEO pay and assess the predictability of compensation based on firm-specific attributes.
+
+The significance of this research extends to corporate governance, investment strategies, and policymaking. By identifying the most influential factors behind executive pay, our findings can help investors assess whether compensation levels are justified relative to firm performance, assist corporate boards in designing more equitable and performance-driven pay structures, and provide regulators with insights into potential governance risks. Ultimately, this study contributes to the broader discourse on executive compensation by offering data-driven insights into how financial and market indicators shape CEO pay.
+
+# Research Questions
+- What company financial and market factors influence CEO compensation?
+- Can we create a predictive model to predict CEO total compensation?
+
+# Data and Methods
+
+**Source:** Pitchbook UW 
+
+## Overview of Dataset
+Using Pitchbook, we custom-formatted a dataset that includes **CEO total compensation** as the dependent variable and the following independent variables:
+
+- **Company Financials:** Total Revenue, Revenue per Employee
+
+- **Profitability Metrics:** ROIC, ROA, Net Profit Margin, EBITDA Margin, Revenue Growth
+
+- **Debt & Leverage:** Net Debt, Debt to Capital, Total Assets
+
+- **Market Indicators:** Price % Change YTD, EV
+
+- **Categorical Factors:** HQ State/Province, Primary Industry Group, CEO
+
+## Data Import & Preprocessing
+Includes formatting column names and negative values (ceo_data), and handling null values by replacing null with medians (quantitative) or mode (qualitative) (imputed_data)
+
+As a result of pre-processing the data, there are 2 datasets that we use for analysis/exploration:
+*ceo_data* = clean but with NA values for missing data
+*imputed_data* = clean with NA values replaced with median or mode (depending on data type) 
+
+```{r, message=FALSE, warning=FALSE}
+
+# Loading Required Libraries
+library(tidyverse)   # Data manipulation
+library(mice)        # Missing data imputation
+library(dplyr)
+
+# Loading the Dataset
+raw_data <- read.csv("ceo_comp_data.csv", na.strings = c("", "NA"))
+
+# Fixing Column Names
+ceo_data <- raw_data %>%
+  rename(
+    total_revenue = "Total.Revenue..FY.",
+    revenue_per_employee= "Revenue.per.Employee..FY.", 
+    roa = "ROA..Return.on.Asset...FY.",
+    roic = "ROIC..Return.on.Invested.Capital...FY.",
+    net_profit_margin = "Net.Profit.Margin..FY.",
+    ebitda_margin = "EBITDA.Margin..FY.",
+    revenue_growth = "Revenue...Growth..FY.",
+    net_debt = "Net.Debt..FY.",
+    debt_to_capital = "Debt.to.Capital..FY.",
+    total_assets = "Total.Assets..FY.",
+    price_change_ytd = "Price...Change.YTD",
+    ev = "EV..FY.",
+    hq = "HQ.State.Province",
+    primary_industry_group = "Primary.Industry.Group",
+    ceo = "CEO",
+    ceo_total_comp_mils = "CEO.Total.Compensation..in.millions.",
+    employees = "Employees",
+    companies = "Companies"
+  )
+
+# Viewing the new column names
+colnames(ceo_data)
+
+# Function to clean and convert numeric columns with commas & parentheses
+convert_numeric_column <- function(column) {
+  column <- as.character(column)  # Ensure it's a character string first
+  
+  # Remove any leading/trailing spaces
+  column <- trimws(column)
+  
+  # Convert negative values (e.g., "(2,000)" → "-2000")
+  column <- gsub("[(),]", "", column)  # Remove parentheses and commas
+  column <- ifelse(grepl("^\\(.*\\)$", column), paste0("-", column), column) 
+  
+  # Convert to numeric
+  column <- as.numeric(column)
+  
+  return(column)
+}
+
+# Apply conversion to `total_revenue` & `total_assets`
+ceo_data$total_revenue <- convert_numeric_column(ceo_data$total_revenue)
+ceo_data$total_assets <- convert_numeric_column(ceo_data$total_assets)
+ceo_data$employees <- convert_numeric_column(ceo_data$employees)
+
+# Check if conversion worked
+str(ceo_data$total_revenue)
+str(ceo_data$total_assets)
+
+
+numeric_cols <- c("roa", "roic", "net_profit_margin", "ebitda_margin", "revenue_growth", 
+                   "net_debt", "price_change_ytd", "ev", "revenue_per_employee",
+                  "debt_to_capital", "ceo_total_comp_mils")
+
+# Defining function to properly format negative numeric values 
+convert_negatives_column <- function(column) {
+  column <- as.character(column)  # Convert to character
+  
+  for (i in seq_along(column)) {  
+    if (!is.na(column[i]) && column[i] != "") {  # Skip NA or empty values
+      column[i] <- trimws(column[i])  # Remove any leading/trailing spaces
+      
+      if (grepl("^\\(.*\\)$", column[i])) {  # Check if value has parentheses
+        column[i] <- gsub("[(),]", "", column[i])  # Remove parentheses & commas
+        column[i] <- as.numeric(column[i]) * -1  # Convert to negative
+      } else {
+        column[i] <- gsub(",", "", column[i])  # Remove commas from numbers
+        column[i] <- as.numeric(column[i])  # Convert normally
+      }
+      
+      # If conversion fails, set it to NA explicitly (to catch errors)
+      if (is.na(column[i])) {
+        column[i] <- NA
+      }
+    }
+  }
+  
+  return(as.numeric(column))  # Ensure the final output is numeric
+}
+
+
+# Apply fix to all numeric columns
+for (col in numeric_cols) {
+  ceo_data[[col]] <- convert_negatives_column(ceo_data[[col]])
+}
+
+
+#  Create a Copy for Imputation
+imputed_data <- ceo_data
+
+#  Defining function to impute numeric columns with median
+impute_median <- function(column) {
+  column[is.na(column)] <- median(column, na.rm = TRUE)
+  return(column)
+}
+
+# Imputing numeric columns
+imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], impute_median)
+
+
+# Defining function to impute categorical columns with mode
+mode_impute <- function(column) {
+  column[is.na(column)] <- names(sort(table(column), decreasing = TRUE))[1]
+  return(column)
+}
+
+# Imputing categorical columns 
+categorical_cols <- c("primary_industry_group", "hq")  
+imputed_data[categorical_cols] <- lapply(imputed_data[categorical_cols], mode_impute)
+
+
+# Ensuring that all numeric columns are actually numeric type for both 
+ceo_data[numeric_cols] <- lapply(ceo_data[numeric_cols], function(x) as.numeric(as.character(x)))
+imputed_data[numeric_cols] <- lapply(imputed_data[numeric_cols], function(x) as.numeric(as.character(x)))
+
+
+# Check the Cleaned Data
+glimpse(ceo_data)
+
+# Check the Imputed Dataset
+glimpse(imputed_data)
+
+#  Optional - Save Cleaned Datasets
+# write.csv(ceo_data, "ceo_comp_data_raw.csv", row.names = FALSE)
+# write.csv(imputed_data, "ceo_comp_data_imputed.csv", row.names = FALSE)
+
+```
+
+## Exploratory Analysis
+
+### Summary Statistics
+```{r}
+#summary(imputed_data)
+
+#Mean and standard deviation for numeric columns
+data_stats <- data.frame(
+  Mean = sapply(ceo_data[numeric_cols], mean, na.rm = TRUE),
+  SD = sapply(ceo_data[numeric_cols], sd, na.rm = TRUE),
+  Min = sapply(ceo_data[numeric_cols], min, na.rm = TRUE),
+  Max = sapply(ceo_data[numeric_cols], max, na.rm = TRUE),
+  Median = sapply(ceo_data[numeric_cols], median, na.rm = TRUE),
+  Q1 = sapply(ceo_data[numeric_cols], quantile, probs = 0.25, na.rm = TRUE),
+  Q3 = sapply(ceo_data[numeric_cols], quantile, probs = 0.75, na.rm = TRUE),
+  Missing = sapply(ceo_data[numeric_cols], function(x) sum(is.na(x)))
+)
+
+#Display the detailed statistics
+print(data_stats)
+```
+
+
+### Overview of CEO Compensation by Location
+```{r, warning=FALSE, message=FALSE}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(stringr)
+library(ggrepel)
+
+# Create location summary statistics
+location_summary <- imputed_data %>%
+  filter(!is.na(hq)) %>%
+  group_by(hq) %>%
+  summarize(
+    avg_ceo_comp = mean(ceo_total_comp_mils, na.rm = TRUE),
+    median_ceo_comp = median(ceo_total_comp_mils, na.rm = TRUE),
+    count = n(),
+    avg_ev = mean(ev/1e6, na.rm = TRUE),
+    avg_employees = mean(employees, na.rm = TRUE)
+  ) %>%
+  # Filter to include only locations with at least 5 companies
+  filter(count >= 5) %>%
+  arrange(desc(avg_ceo_comp))
+
+# Print top locations by CEO compensation
+print(location_summary)
+
+# Create a bar chart showing average CEO compensation by location
+p_location_bar <- ggplot(location_summary, 
+                         aes(x = reorder(hq, avg_ceo_comp), 
+                             y = avg_ceo_comp, 
+                             fill = avg_ceo_comp)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("$%.1fM", avg_ceo_comp)), 
+            hjust = -0.1, size = 3) +
+  geom_text(aes(label = sprintf("n=%d", count)),
+            y = 1, hjust = 1.1, size = 3, color = "white") +
+  coord_flip() +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal() +
+  labs(
+    title = "Average CEO Compensation by HQ Location",
+    subtitle = "For locations with at least 5 companies",
+    x = NULL,
+    y = "Average CEO Compensation ($ Millions)",
+    fill = "Avg CEO Comp ($M)"
+  ) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(size = 9)
+  )
+
+print(p_location_bar)
+```
+
+The concentration of businesses in a given area is probably not the only factor influencing CEO compensation; other criteria, such as industry type, firm size, profitability, and market value, are probably more important. Although adding headquarters location as a categorical variable to the regression model might still increase prediction accuracy, the fact that it did not correlate with the number of companies suggests that CEO salary may be more strongly impacted by general market and financial conditions.
+Based on our research, we compiled a dataset of variables that we hypothesize would correlate with CEO compensation to explore.
+
+
+```{r, warning=FALSE, message=FALSE}
+# Create a scatter plot comparing CEO compensation vs. enterprise value by location
+p_location_scatter <- ggplot(imputed_data %>% 
+                              filter(hq %in% location_summary$hq), 
+                            aes(x = ev/1e6, 
+                                y = ceo_total_comp_mils,
+                                color = hq)) +
+  geom_point(alpha = 0.7, size = 3) +
+  scale_x_log10(labels = scales::comma_format()) +
+  scale_color_viridis_d() +
+  theme_minimal() +
+  labs(
+    title = "CEO Compensation vs. Enterprise Value by HQ Location",
+    subtitle = "Log scale for EV, top locations by company count",
+    x = "Enterprise Value ($ Millions, log scale)",
+    y = "CEO Compensation ($ Millions)",
+    color = "Headquarters"
+  ) +
+  theme(legend.position = "right")
+
+print(p_location_scatter)
+```
+With notable fluctuation and outliers, the scatterplot demonstrates a slight correlation between CEO compensation and enterprise value. Although CEO compensation tends to increase with business valuation, the inconsistent data indicates that other factors, such as profitability, industry type, and market conditions, might have a greater impact. This suggests that CEO compensation cannot be accurately predicted by company value alone.
+
+
+```{r, warning=FALSE, message=FALSE}
+# Create a location comparison visualization
+p_location_comparison <- ggplot(location_summary, 
+                             aes(x = avg_ev, 
+                                 y = avg_ceo_comp, 
+                                 size = count,
+                                 color = avg_ceo_comp)) +
+  geom_point(alpha = 0.8) +
+  geom_text_repel(aes(label = hq), 
+                 size = 3,
+                 box.padding = 0.5,
+                 point.padding = 0.5,
+                 force = 2) +
+  scale_x_log10(labels = scales::comma_format()) +
+  scale_size_continuous(range = c(3, 10)) +
+  scale_color_viridis_c(option = "plasma") +
+  theme_minimal() +
+  labs(
+    title = "CEO Compensation vs. Enterprise Value by HQ Location",
+    subtitle = "Bubble size indicates number of companies in each HQ location",
+    x = "Average Enterprise Value ($ Millions, log scale)",
+    y = "Average CEO Compensation ($ Millions)",
+    size = "Number of Companies",
+    color = "Avg CEO Comp ($M)"
+  )
+
+print(p_location_comparison)
+```
+
+The bubble size indicates the number of businesses in each place, and the bubble chart illustrates the correlation between average CEO remuneration and average enterprise value by region. Although enterprise value and CEO salary are highest in California and Illinois, the general trend is irregular indicating that enterprise value by itself is unable to adequately explain CEO compensation. The variance suggests that additional variables, such the nature of the industry and local economic circumstances, might have a big impact on pay.
+
+
+```{r, warning=FALSE, message=FALSE}
+# Location boxplot to show distribution
+p_location_boxplot <- ggplot(imputed_data %>% 
+                              filter(hq %in% location_summary$hq), 
+                            aes(x = reorder(hq, ceo_total_comp_mils, FUN = median), 
+                                y = ceo_total_comp_mils,
+                                fill = median(ceo_total_comp_mils))) +
+  geom_boxplot() +
+  coord_flip() +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of CEO Compensation by Location",
+    subtitle = "For locations with at least 5 companies",
+    x = NULL,
+    y = "CEO Compensation ($ Millions)",
+    fill = "Median CEO Comp ($M)"
+  ) +
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(size = 9)
+  )
+
+print(p_location_boxplot)
+```
+
+For states with at least five businesses, the CEO compensation distribution by headquarters location is displayed in a box plot. It draws attention to the notable differences in CEO compensation between states, with Illinois and California showing more outliers and higher medians, indicating a greater range of salary. Several CEOs earn significantly more than the median, as evidenced by the existence of several outliers in several states.
+
+### We will create a correlation matrix to check relationships between independent variables (avoid multicollinearity) and assess their correlation with our dependent variable (CEO compensation)
+
+```{r, warning=FALSE, message=FALSE}
+# Select only numeric columns for correlation analysis
+numeric_vars <- ceo_data[, sapply(ceo_data, is.numeric)]  
+
+# Compute the correlation matrix
+cor_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
+
+# Print the correlation matrix
+# print(cor_matrix)
+
+# Optionally, visualize it with a heatmap
+library(ggcorrplot)
+ggcorrplot(cor_matrix, 
+           lab = TRUE, 
+           lab_size = 2,           # Adjust text size
+           colors = c("red", "white", "blue"), 
+           title = "Correlation Matrix of CEO Compensation Factors",
+           hc.order = TRUE,         # Order by hierarchical clustering
+           tl.cex = 10,             # Text label size
+           tl.srt = 45,             # Rotate text labels
+           ggtheme = theme_minimal())  # Use a cleaner theme
+
+```
+
+Overall, despite the research, we found that these variables actually don't have the strongest 
+correlation with CEO compensation. We will still explore these variables and see which within 
+this we chose the following variables to focus on based on the above corr matrix: 
+EV, revenue_per_employee, employees, roic, and price_change_ytd
+
+
+### Visualizations 
+```{r, warning=FALSE, message=FALSE}
+# Load necessary libraries
+library(tidyverse)
+library(ggplot2)
+library(car)
+library(stats)
+# Using the imputed_data dataset from the provided information
+# 1. Box plots of CEO compensation by industry with ANOVA test
+# First, let's get the top industries by frequency to avoid too many categories
+top_industries <- imputed_data %>%
+  count(primary_industry_group, sort = TRUE) %>%
+  filter(n >= 10) %>% # filter for industries with at least 10 companies
+  pull(primary_industry_group)
+# Create a filtered dataset with only top industries
+industry_filtered <- imputed_data %>%
+  filter(primary_industry_group %in% top_industries)
+# Create boxplot of CEO compensation by industry
+ggplot(industry_filtered, aes(x = reorder(primary_industry_group, ceo_total_comp_mils, FUN = median), 
+                              y = ceo_total_comp_mils)) +
+  geom_boxplot(fill = "skyblue", alpha = 0.7) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "CEO Compensation by Industry",
+       x = "Industry Group",
+       y = "CEO Total Compensation (Millions $)")
+# Run ANOVA test to check if CEO compensation differs significantly between industries
+anova_result <- aov(ceo_total_comp_mils ~ primary_industry_group, data = industry_filtered)
+summary(anova_result)
+```
+The CEO compensation distribution across several industrial groupings is displayed in the box plot. The greatest variance is seen in the software sector, where numerous outliers suggest that certain CEOs are paid disproportionately well. In contrast to other financial services, IT services, and commercial services, which have more closely clustered compensation values, the semiconductor and computer hardware businesses also exhibit comparatively higher median salary. This implies that CEO compensation is highly influenced by industry type, which may improve the regression model's forecast accuracy.
+
+Regarding the ANOVA test, we have a p value of 0.0191 ( < .05), which simply confirms that there is a statistically significant difference in industry mean CEO compensations. We now know we can conduct meaningful analysis to understand how industry affects compensation. 
+
+
+```{r, warning=FALSE, message=FALSE}
+# 2. Histogram showing distribution of ceo compensation 
+ggplot(imputed_data, aes(x = ceo_total_comp_mils)) +
+  geom_histogram(bins = 30, fill = "orange", color = "black", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Distribution of CEO Compensation",
+       x = "CEO Total Compensation (Millions $)",
+       y = "Frequency")
+```
+
+CEO salary is significantly skewed to the right, according to the histogram. A few extreme outliers earn over $100 million, whereas the majority of CEOs make between $0 and $10 million. This implies that although the majority of CEOs are paid moderately, the average is raised by a few high-paid CEOs. Given this skewness, median pay might be a better indicator of central tendency than mean.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+# Understanding 
+
+# Split companies into high and low debt using median as divider
+debt_median <- median(imputed_data$debt_to_capital, na.rm = TRUE)
+imputed_data$debt_level <- ifelse(imputed_data$debt_to_capital > debt_median, "High Debt", "Low Debt")
+# Visualize CEO compensation by debt level
+ggplot(imputed_data, aes(x = debt_level, y = ceo_total_comp_mils)) +
+  geom_boxplot(fill = c("lightgreen", "coral"), alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "CEO Compensation by Debt Level",
+       x = "Debt Level",
+       y = "CEO Total Compensation (Millions $)")
+# Test for normality
+shapiro.test(imputed_data$ceo_total_comp_mils[1:5000]) # Limited to 5000 samples due to Shapiro-Wilk test limitations
+# Based on histogram and normality test, choose appropriate test
+# If skewed (likely), use Wilcoxon test - we choose this one
+wilcox_result <- wilcox.test(ceo_total_comp_mils ~ debt_level, data = imputed_data)
+print(wilcox_result)
+# If normal distribution (unlikely), use t-test
+t_test_result <- t.test(ceo_total_comp_mils ~ debt_level, data = imputed_data)
+print(t_test_result)
+
+```
+The findings of the Welch two-sample t-test and the Wilcoxon rank sum test show a significant difference in CEO compensation between companies with high and low debt levels. Given the extremely low p-values for both tests (3.03×10^5 and 0.00484), the null hypothesis is rejected and the statistical significance of the difference is confirmed. CEOs of high-debt companies typically make $12.48 million, but CEOs of low-debt companies make $7.43 million. This suggests that higher debt levels may be associated with higher CEO compensation, maybe as a result of increasing financial risk or the difficulty of managing high-debt companies.
+
+According to the box plots, CEOs of businesses with large debt loads typically earn more money than those of businesses with smaller debt loads. High-debt corporations have a larger median salary, a wider compensation distribution, and more severe outliers. The results of the t-test, which indicated a statistically significant difference in remuneration between enterprises with high and low debt, are consistent with this. This implies that, maybe as a result of the greater complexity and risk associated with running such businesses, higher debt levels may be associated with higher CEO compensation.
+
+# Regression Analysis 
+
+## Multiple Linear Regression: CEO Compensation ~ Financial Metrics
+
+### Scaling Data to standardize 
+```{r, message=FALSE, warning=FALSE}
+
+target_vars <- c("ev", "roic", "revenue_per_employee", "employees", "price_change_ytd", "ceo_total_comp_mils")
+
+ceo_data_scaled <- imputed_data %>%
+      dplyr::select(all_of(target_vars))
+
+# Apply standardization
+ceo_data_scaled[target_vars] <- scale(ceo_data[target_vars])
+
+lm_full <- lm(ceo_total_comp_mils ~ ., data = ceo_data_scaled)
+summary(lm_full) 
+
+plot(lm_full, which = 1, main ="Residual Analysis")  # Residuals vs Fitted
+hist(residuals(lm_full), main="Histogram of Residuals", xlab="Residuals", col="lightblue", border="black")
+
+```
+
+**What this full linear mode Tells Us:**
+Multiple R-squared tells us that only 13.16% of the variance in CEO compensation is explained by the independent variables, which is extremely low and suggests that other important predictors are missing. The Adjusted R-squared is even lower, which tells us that the model does not generalize well. 
+
+The F-Statistic and low p-value tells us that the model is statistically significant overall, meaning that at least one predictor is likely useful. 
+
+**What the Residuals vs. Fitted Plot Tells Us:**
+Ideally, the residuals should be randomly scattered around zero, but instead there is a cluster of points close to 0, and some extreme values. The outliers could be highly influencing the model and affecting generalization, and the non-linearity of the red line tells us that the model is probably not fully capturing all relationships. 
+
+**What the Histogram of Residuals Tells Us:**
+Again, the ideal scenario for the residuals does not match the actual case. They should be normally distributed, but these are in a right-skewed distribution. 
+
+```{r, warning=FALSE, message=FALSE}
+# Remove rows with NA in ceo_total_comp_mils
+ceo_data_scaled <- ceo_data_scaled %>% drop_na(ceo_total_comp_mils)
+
+# Now create predicted values
+pred_values <- predict(lm_full, newdata = ceo_data_scaled)
+
+# Scatter plot
+plot(ceo_data_scaled$ceo_total_comp_mils, pred_values, 
+     xlab = "Actual CEO Compensation (Scaled)", 
+     ylab = "Predicted CEO Compensation (Scaled)", 
+     main = "Actual vs Predicted CEO Compensation",
+     col = "blue", pch = 16)
+
+# Add a diagonal reference line
+abline(0, 1, col = "red", lwd = 2)
+
+```
+**Looking at the Actual Vs. Predicted Scatter Plot:**
+
+If the model was perfectly trained, each blue dot would be on the red line (meaning the actual value = predicted value). 
+If a blue dot is above the red line, then the model underestimated CEO compensation (actual > predicted). 
+If a blue dot is below the red line, then the model overestimated CEO compensation (actual < predicted). 
+
+Looking at the scatter plot, there is more clustering at lower compensation values and more deviation from the line at higher compensation values. This tells us that the model struggles with accurately predicting higher-compensation CEOs. 
+
+Overall, we can see that linear modeling is likely not the best way to assess these relationships, and the next step in this project would be to train and assess a non-linear model. 
+
+
+
+# Results
+
+Our initial analysis of CEO compensation by location showed that Illinois and California had the highest average pay, while Nevada had the lowest. However, headquarters’ location alone was not a strong predictor of CEO compensation, suggesting that market and financial conditions play a more significant role.
+A correlation analysis identified five key financial factors that have the strongest relationships with CEO compensation:
+•	Enterprise Value (EV) – A measure of total company worth
+•	Revenue Per Employee – Efficiency metric linking revenue to workforce size
+•	Number of Employees – Indicator of company size
+•	Return on Invested Capital (ROIC) – Profitability measure
+•	Price % Change YTD – Stock market performance indicator
+We then ran a multiple linear regression model using these factors. The model explained only 13.16% of the variance in CEO compensation (R² = 0.1316), indicating that many important predictors were missing. Among the variables, Enterprise Value and Revenue Per Employee had the strongest positive relationships with CEO pay. However, residual plots and skewed distribution of residuals suggested that a linear model might not be the best approach for this analysis.
+A comparison of CEO pays by industry using an ANOVA test showed a statistically significant difference across sectors (p = 0.0191). CEOs in the software, semiconductor, and computer hardware industries tend to earn the highest median pay, likely to reflect the growth potential and competitive nature of these fields.
+We also analyzed how CEO pay differs between high-debt and low-debt companies. On average, CEOs of highly leveraged firms earn significantly more ($12.48M) than those in low-debt firms ($7.43M) (p < 0.005). This suggests that financial complexity and risk management responsibilities may play a role in determining executive compensation.
+A scatter plot comparing actual vs. predicted CEO compensation revealed that the model struggled to accurately predict higher compensation levels. The clustering of data points at lower compensation value indicates that our model may not fully capture the non-linear relationships affecting CEO pay.
+
+
+# Discussion
+
+Our findings highlight that while some financial factors—such as Enterprise Value and Revenue Per Employee—correlate with CEO pay, they don’t fully explain the variations. This suggests that other qualitative factors, such as board influence, negotiation power, and corporate governance policies, likely play a significant role.
+The industry-level analysis reinforced that executive compensation varies widely across sectors, particularly in high-tech industries, where competition for top talent is intense. Additionally, our debt-level comparison suggests that CEOs managing high-debt firms may receive higher pay as compensation for taking on greater financial risk and complexity.
+Given our insights gained, our study has some limitations:
+1.	Data Scope – Our dataset, sourced from PitchBook, focuses primarily on publicly available financial data and may not capture compensation structures in private companies.
+2.	Missing Variables – We did not include factors such as CEO tenure, stock ownership, or qualitative leadership attributes, which may be critical in explaining compensation differences.
+3.	Nonlinearity – The poor predictive performance of our linear model suggests that CEO pay is not linearly related to financial factors. More advanced techniques, such as decision trees, random forests, or machine learning models, could better capture complex relationships.
+For investors, understanding the key drivers of CEO pay can improve executive pay evaluations and help assess whether compensation is justified relative to firm performance. For corporate boards, these insights can guide the development of more effective, performance-based pay structures. Policymakers and regulators can use this research to ensure fair pay practices and promote transparency in corporate governance.
+Ultimately, our study underscores the complex and multifaceted nature of CEO compensation. While financial metrics matter, they only tell part of the story—other governance, industry, and negotiation-related factors likely play an equally important role.
+
+
